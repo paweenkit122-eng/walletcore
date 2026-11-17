@@ -10,17 +10,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"walletcore/internal/config"
+	"walletcore/internal/wallet"
 )
 
 // Server holds shared dependencies used by HTTP handlers.
 type Server struct {
-	cfg  config.Config
-	pool *pgxpool.Pool
+	cfg    config.Config
+	pool   *pgxpool.Pool
+	wallet *wallet.Store
 }
 
 // New constructs a Server with its dependencies.
 func New(cfg config.Config, pool *pgxpool.Pool) *Server {
-	return &Server{cfg: cfg, pool: pool}
+	return &Server{
+		cfg:    cfg,
+		pool:   pool,
+		wallet: wallet.NewStore(pool),
+	}
 }
 
 // Router builds the chi router with middleware and routes.
@@ -38,9 +44,13 @@ func (s *Server) Router() http.Handler {
 	r.Get("/healthz", s.handleHealthz) // liveness: is the process up?
 	r.Get("/readyz", s.handleReadyz)   // readiness: can we reach the DB?
 
-	// Versioned API. Feature handlers (auth, wallets, transfers) land here next.
+	// Versioned API.
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/ping", s.handlePing)
+
+		r.Post("/users", s.handleCreateUser) // dev helper: create a user + wallet
+		r.Post("/topups", s.handleTopUp)     // add money to a wallet (your TopUp)
+		// Coming next: POST /transfers, GET /accounts/{id}/balance, /statement
 	})
 
 	return r

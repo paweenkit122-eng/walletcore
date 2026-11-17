@@ -10,21 +10,21 @@ and **concurrency-safe balance updates** under load.
 
 [![Go](https://img.shields.io/badge/Go-1.23-00ADD8)](https://go.dev)
 [![Postgres](https://img.shields.io/badge/Postgres-16-336791)](https://www.postgresql.org)
-[![Status](https://img.shields.io/badge/status-Phase%200%20(scaffold)-yellow)](#️-roadmap)
+[![Status](https://img.shields.io/badge/status-Phase%202%20(top--up)-brightgreen)](#️-roadmap)
 
-> **📍 Status — Phase 0 (scaffold).** What runs today: Dockerized Postgres,
-> schema migrations, config, a pgx connection pool, and `/healthz` · `/readyz`
-> endpoints. The table below is the **target design**; the money-movement logic
-> (top-up, transfer, idempotency, row-locking) is being built in Phases 1–5 —
-> see the [Roadmap](#️-roadmap). Documenting the design before the code is deliberate.
+> **📍 Status — Phase 2 (ledger core).** What works today: Dockerized Postgres,
+> schema migrations, health endpoints, and a **working double-entry top-up** with
+> **idempotency keys** — replaying the same key never moves money twice, verified
+> end-to-end. Auth (Phase 1) is deferred: a dev endpoint creates a user + wallet
+> for now. Transfers with row-locking are next (Phase 3). See the [Roadmap](#️-roadmap).
 
 ---
 
 ## ✨ Why this design (the interesting parts)
 
-> The behaviours below are the **design goals** this schema is built for. The
-> ledger schema (`migrations/`) already encodes them; the HTTP handlers that
-> enforce them land in Phases 2–3.
+> These are the invariants the ledger guarantees. **Top-up (Phase 2) already
+> enforces money-integrity and idempotency in code**; the row-lock + no-negative
+> path is exercised by transfers in Phase 3.
 
 | Concern | How WalletCore handles it |
 |---|---|
@@ -82,6 +82,26 @@ curl localhost:8080/readyz       # {"status":"ready"}   (pings the DB)
 curl localhost:8080/api/v1/ping  # {"message":"pong"}
 ```
 
+### Try the wallet (Phase 2)
+
+```bash
+# create a user + their THB wallet (dev helper; real auth is Phase 1)
+curl -s -X POST localhost:8080/api/v1/users -d '{"email":"a@b.com"}'
+# -> {"user_id":1,"account_id":2}
+
+# top up 100.00 THB (10000 satang) into the wallet
+curl -s -X POST localhost:8080/api/v1/topups \
+     -H 'Idempotency-Key: key-001' -d '{"account_id":2,"amount":10000}'
+# -> {"transaction_id":1,"account_id":2,"new_balance":10000}
+
+# retry with the SAME key -> same result, balance NOT doubled (idempotent)
+curl -s -X POST localhost:8080/api/v1/topups \
+     -H 'Idempotency-Key: key-001' -d '{"account_id":2,"amount":10000}'
+```
+
+Amounts are integer **satang** (1 THB = 100 satang). The ledger invariant
+`SELECT SUM(amount) FROM entries` always equals **0**.
+
 Handy commands (see `make help`):
 
 ```bash
@@ -123,8 +143,8 @@ walletcore/
 ## 🗺️ Roadmap
 
 - [x] **Phase 0** — Scaffold: Docker Compose, Postgres, migrations, health checks
-- [ ] **Phase 1** — Auth: register / login, JWT
-- [ ] **Phase 2** — Ledger core: accounts + double-entry entries + top-up
+- [ ] **Phase 1** — Auth: register / login, JWT _(deferred; a dev endpoint creates a user + wallet for now)_
+- [x] **Phase 2** — Ledger core: accounts + double-entry entries + top-up
 - [ ] **Phase 3** — Transfer: DB transaction + row lock + idempotency
 - [ ] **Phase 4** — Query: balance + statement (pagination)
 - [ ] **Phase 5** — Correctness: concurrency load tests + ledger-invariant tests
