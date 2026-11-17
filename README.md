@@ -10,21 +10,22 @@ and **concurrency-safe balance updates** under load.
 
 [![Go](https://img.shields.io/badge/Go-1.23-00ADD8)](https://go.dev)
 [![Postgres](https://img.shields.io/badge/Postgres-16-336791)](https://www.postgresql.org)
-[![Status](https://img.shields.io/badge/status-Phase%202%20(top--up)-brightgreen)](#️-roadmap)
+[![Status](https://img.shields.io/badge/status-Phase%203%20(transfers)-brightgreen)](#️-roadmap)
 
-> **📍 Status — Phase 2 (ledger core).** What works today: Dockerized Postgres,
-> schema migrations, health endpoints, and a **working double-entry top-up** with
-> **idempotency keys** — replaying the same key never moves money twice, verified
-> end-to-end. Auth (Phase 1) is deferred: a dev endpoint creates a user + wallet
-> for now. Transfers with row-locking are next (Phase 3). See the [Roadmap](#️-roadmap).
+> **📍 Status — Phase 3 (transfers).** What works today, verified end-to-end:
+> **double-entry top-up and transfer**, both **idempotent** (replaying a key never
+> moves money twice), with transfers **locking both accounts (`SELECT … FOR
+> UPDATE`)** and **rejecting overdrafts**. Auth (Phase 1) is deferred: a dev
+> endpoint creates a user + wallet for now. Next: balance & statement queries
+> (Phase 4). See the [Roadmap](#️-roadmap).
 
 ---
 
 ## ✨ Why this design (the interesting parts)
 
-> These are the invariants the ledger guarantees. **Top-up (Phase 2) already
-> enforces money-integrity and idempotency in code**; the row-lock + no-negative
-> path is exercised by transfers in Phase 3.
+> These invariants are **enforced in code today** and verified end-to-end on
+> Docker: top-up and transfer are both idempotent and double-entry, and transfers
+> lock both accounts (`SELECT … FOR UPDATE`) and reject overdrafts.
 
 | Concern | How WalletCore handles it |
 |---|---|
@@ -97,6 +98,14 @@ curl -s -X POST localhost:8080/api/v1/topups \
 # retry with the SAME key -> same result, balance NOT doubled (idempotent)
 curl -s -X POST localhost:8080/api/v1/topups \
      -H 'Idempotency-Key: key-001' -d '{"account_id":2,"amount":10000}'
+
+# create a second user, then transfer 50.00 THB from wallet 2 -> wallet 3
+curl -s -X POST localhost:8080/api/v1/users -d '{"email":"b@c.com"}'
+curl -s -X POST localhost:8080/api/v1/transfers \
+     -H 'Idempotency-Key: tx-001' \
+     -d '{"from_account_id":2,"to_account_id":3,"amount":5000}'
+# -> {"transaction_id":...,"from_balance":...,"to_balance":5000}
+# overdraft -> 422, unknown account -> 404, same account -> 400
 ```
 
 Amounts are integer **satang** (1 THB = 100 satang). The ledger invariant
@@ -145,7 +154,7 @@ walletcore/
 - [x] **Phase 0** — Scaffold: Docker Compose, Postgres, migrations, health checks
 - [ ] **Phase 1** — Auth: register / login, JWT _(deferred; a dev endpoint creates a user + wallet for now)_
 - [x] **Phase 2** — Ledger core: accounts + double-entry entries + top-up
-- [ ] **Phase 3** — Transfer: DB transaction + row lock + idempotency
+- [x] **Phase 3** — Transfer: DB transaction + row lock + idempotency
 - [ ] **Phase 4** — Query: balance + statement (pagination)
 - [ ] **Phase 5** — Correctness: concurrency load tests + ledger-invariant tests
 - [ ] **Phase 6** — Ship: OpenAPI/Swagger docs + deploy (Fly.io / Render / Railway)

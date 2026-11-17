@@ -48,9 +48,10 @@ func (s *Server) Router() http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/ping", s.handlePing)
 
-		r.Post("/users", s.handleCreateUser) // dev helper: create a user + wallet
-		r.Post("/topups", s.handleTopUp)     // add money to a wallet (your TopUp)
-		// Coming next: POST /transfers, GET /accounts/{id}/balance, /statement
+		r.Post("/users", s.handleCreateUser)     // dev helper: create a user + wallet
+		r.Post("/topups", s.handleTopUp)         // add money to a wallet
+		r.Post("/transfers", s.handleTransfer)   // move money between two accounts
+		// Coming next: GET /accounts/{id}/balance, GET /accounts/{id}/statement
 	})
 
 	return r
