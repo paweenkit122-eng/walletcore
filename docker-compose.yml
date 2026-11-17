@@ -1,0 +1,48 @@
+services:
+  # PostgreSQL database.
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: wallet
+      POSTGRES_DB: walletcore
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d walletcore"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot migration runner: applies ./migrations then exits.
+  migrate:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://wallet:wallet@db:5432/walletcore?sslmode=disable"
+      - "up"
+
+  # The API service.
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      APP_ENV: development
+      HTTP_PORT: "8080"
+      DATABASE_URL: "postgres://wallet:wallet@db:5432/walletcore?sslmode=disable"
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
